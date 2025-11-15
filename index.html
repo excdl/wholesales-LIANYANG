@@ -1,0 +1,539 @@
+const SPREADSHEET_ID = '1BFvR6lffQe1fSp-6L1zZqVPvzKjw46dAJ9gK-Wj2MB8';  // 請替換成你的實際 Spreadsheet ID 
+
+function doGet() {
+  return HtmlService.createHtmlOutputFromFile('index');
+}
+
+// 傳 Products 給前端
+function getProducts() {
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const sheet = ss.getSheetByName('商品資料');
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return [];
+  const data = sheet.getRange(2, 1, lastRow - 1, 5).getValues();
+  return data.map(r => ({
+    id: r[0],
+    name: r[1],
+    price: r[2],
+    unit: r[3],
+    desc: r[4]
+  }));
+}
+
+// 傳 Clients 資料給前端
+function getClients() {
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const sheet = ss.getSheetByName('客戶基本資料');
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return [];
+  const data = sheet.getRange(2, 1, lastRow - 1, 18).getValues();
+  return data.map(r => ({
+    name: r[3],
+    shortName: r[4],
+    invoiceNumber: r[5],
+    contact: r[6],
+    mobile: r[7],
+    tel: r[8],
+    tel2: r[9],
+    address: r[10],
+    paymentMethod: r[11],
+    paymentDays: r[12],
+    paymentDate: r[13],
+    salesperson: r[14],
+    tripNumber: String(r[15] ?? ''),   // ✅ 車次強制為字串
+    email: r[16],
+    note: r[17]
+  }));
+}
+
+// 產生新的訂單編號
+function generateOrderId() {
+  const lock = LockService.getScriptLock();
+  try {
+    // 等待最多30秒拿鎖，避免死等
+    lock.waitLock(30000);
+
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const sheet = ss.getSheetByName('結帳');
+    const now = new Date();
+    const year = now.getFullYear() - 1911;
+    const month = (now.getMonth() + 1).toString().padStart(2, '0');
+    const day = now.getDate().toString().padStart(2, '0');
+    const prefix = `${year}${month}${day}`;
+
+    const lastRow = sheet.getLastRow();
+    let maxNum = 0;
+    let existingIds = [];
+
+    if (lastRow >= 2) {
+      existingIds = sheet.getRange(2, 1, lastRow - 1, 1).getValues().flat();
+      existingIds.forEach(id => {
+        if (id != null) {
+          const idStr = String(id);
+          if (idStr.startsWith(prefix)) {
+            const numPart = idStr.slice(prefix.length);
+            const num = parseInt(numPart, 10);
+            if (!isNaN(num) && num > maxNum) {
+              maxNum = num;
+            }
+          }
+        }
+      });
+    }
+
+    let newNum = maxNum + 1;
+    let newId = prefix + String(newNum).padStart(4, '0');
+
+    while (existingIds.includes(newId)) {
+      newNum++;
+      newId = prefix + String(newNum).padStart(4, '0');
+    }
+
+    return newId;
+
+  } catch (e) {
+    throw new Error('無法取得鎖，請稍後重試');
+  } finally {
+    // 釋放鎖（不一定要寫，腳本結束會自動釋放）
+    lock.releaseLock();
+  }
+}
+
+
+function addNewOrder(dateString) {
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const sheet = ss.getSheetByName('結帳');
+  const orderId = generateOrderId();
+  const orderDate = dateString ? new Date(dateString) : new Date();
+
+  // 永遠用 appendRow，安全處理空表
+  sheet.appendRow([orderId, orderDate]);
+
+  SpreadsheetApp.flush();
+  return orderId;
+}
+
+
+
+// ✅ 提供前端用的使用者列表
+function getAllCreators() {
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const sheet = ss.getSheetByName('使用者');
+  if (!sheet) return [];
+
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return [];
+
+  const names = sheet.getRange(2, 1, lastRow - 1, 1).getValues().flat();
+  return names.filter(name => name);
+}
+
+function getEmployees() {
+  return getAllCreators(); // 同功能
+}
+
+/**
+ * 建立或更新訂單。
+ */
+
+function saveOrder(order) {
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(30000);
+
+    if (!order.client || order.client.trim() === '') throw new Error('客戶名稱不可為空');
+    if (!order.items || !order.items.length) throw new Error('訂單沒有明細');
+
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const orderSheet = ss.getSheetByName('結帳');
+    const detailSheet = ss.getSheetByName('銷貨明細');
+    const productSheet = ss.getSheetByName('商品資料');
+    const clientSheet = ss.getSheetByName('客戶基本資料');
+    if (!orderSheet || !detailSheet || !productSheet || !clientSheet)
+      throw new Error('找不到工作表');
+
+    const productData = productSheet.getDataRange().getValues();
+    const clientData = clientSheet.getDataRange().getValues();
+    const clientMap = new Map(clientData.slice(1).map(r => [String(r[3]).trim(), r[1]]));
+
+    // -------- 計算訂單金額 ----------
+    order.items.forEach(i => {
+      i.qty = Number(i.qty) || 0;
+      i.price = Number(i.price) || 0;
+      i.weight = Number(i.weight) || 0;
+      i.convertUnit = Number(i.convertUnit) || 1;
+      i.subtotal = i.subtotal !== undefined ? Number(i.subtotal)
+        : (i.weight > 0 ? i.weight * i.convertUnit * i.price : i.qty * i.price);
+    });
+
+    const totalAmount = order.items.reduce((sum, i) => sum + i.subtotal, 0);
+    const discount = parseFloat(order.discount) || 0;
+    const subtotal = totalAmount - discount;
+    const tax = order.taxable ? Math.round(subtotal * 0.05) : 0;
+    const total = Math.round(subtotal + tax);
+
+    // -------- 取得所有訂單 ----------
+    const allOrders = orderSheet.getDataRange().getValues();
+    const headers = allOrders[0];
+    const existingIds = new Set(allOrders.slice(1).map(r => String(r[0])));
+    let orderId = order.orderId;
+
+    // -------- 檢查是否已有相同訂單 ----------
+    if (!orderId) {
+      const sameOrder = allOrders.slice(1).find(r => {
+        const clientMatch = String(r[2]).trim() === order.client.trim();
+        const dateMatch = r[1] && new Date(r[1]).getTime() === new Date(order.dateStr || new Date()).getTime();
+        return clientMatch && dateMatch;
+      });
+      if (sameOrder) orderId = sameOrder[0];
+    }
+
+    // -------- 生成單號（如果需要） ----------
+    if (!orderId || order.mode === 'copy') {
+      do { orderId = generateOrderId(); } while (existingIds.has(orderId));
+    }
+
+    // -------- 新的主檔資料 ----------
+    const newOrderRow = [
+      orderId,
+      new Date(order.dateStr || new Date()),
+      order.client || '',
+      order.invoiceNumber || '',
+      order.contact || '',
+      order.mobile || '',
+      order.tel || '',
+      order.clientAddress || '',
+      order.paymentMethod || '',
+      order.paymentDays || '',
+      order.paymentDate || '',
+      order.salesperson || '',
+      String(order.tripNumber ?? ''),
+      order.email || '',
+      totalAmount,
+      discount,
+      tax,
+      total,
+      order.creator || ''
+          ];
+
+    // -------- 比對並更新結帳表（只改該更新欄位） ----------
+    const orderMap = new Map();
+    for (let i = 1; i < allOrders.length; i++) {
+      const id = String(allOrders[i][0]).trim();
+      if (id) orderMap.set(id, { rowIndex: i + 1, values: allOrders[i] });
+    }
+
+    if (orderMap.has(orderId)) {
+      const { rowIndex, values } = orderMap.get(orderId);
+      for (let c = 0; c < newOrderRow.length; c++) values[c] = newOrderRow[c];
+      orderSheet.getRange(rowIndex, 1, 1, values.length).setValues([values]);
+    } else {
+      orderSheet.appendRow(newOrderRow);
+    }
+   // -------- 寫入是否應稅到 X 欄（第24欄） ----------
+    const lastRow = orderMap.has(orderId)
+    ? orderMap.get(orderId).rowIndex
+    : orderSheet.getLastRow();
+
+    orderSheet.getRange(lastRow, 24).setValue(order.taxable ? '應稅' : '免稅');
+    // -------- 更新銷貨明細（比對 N 欄） ----------
+    const detailValues = detailSheet.getDataRange().getValues();
+    const dataRows = detailValues.slice(1);
+
+    const detailMap = new Map(); // key = N欄
+    for (let i = 0; i < dataRows.length; i++) {
+      const key = String(dataRows[i][13] || '').trim(); // 第14欄 N
+      if (key) detailMap.set(key, { rowIndex: i + 2, values: dataRows[i] });
+    }
+
+    order.items.forEach(item => {
+      const key = `${orderId}_${String(item.name).trim()}`;
+      let supplier = '';
+      for (let j = 1; j < productData.length; j++) {
+        if (String(productData[j][0]) === String(item.id)) {
+          supplier = productData[j][4] || '';
+          break;
+        }
+      }
+
+      const newRow = [
+        orderId, item.id || '', item.name || '', item.qty, item.price,
+        item.priceUnit || '', item.shipQty || 0,
+        item.convertQty || 0, item.convertUnitName || '',
+        item.subtotal, order.salesperson || '', order.tripNumber || '', supplier, key
+      ];
+
+      if (detailMap.has(key)) {
+        const { rowIndex, values } = detailMap.get(key);
+        for (let c = 0; c < newRow.length; c++) values[c] = newRow[c];
+        detailSheet.getRange(rowIndex, 1, 1, values.length).setValues([values]);
+      } else {
+        detailSheet.appendRow(newRow);
+      }
+    });
+
+// -------- 客戶資料同步到銷貨明細 ----------
+const checkoutMap = new Map();
+const updatedOrders = orderSheet.getDataRange().getValues(); // 最新的主檔資料
+for (let i = 1; i < updatedOrders.length; i++) {
+  const id = String(updatedOrders[i][0] || '').trim();
+  if (!id) continue;
+  checkoutMap.set(id, {
+    AA: clientMap.get(String(updatedOrders[i][2] || '').trim()) || '',  // 客戶代號
+    C: String(updatedOrders[i][2] || ''), // 客戶名稱
+    B: updatedOrders[i][1]
+      ? Utilities.formatDate(new Date(updatedOrders[i][1]), Session.getScriptTimeZone(), 'yyyy/MM/dd')
+      : '',
+    L: updatedOrders[i][11] || '', // 業務
+    // 這裡直接轉成字串，如果為 null 或 undefined 就用空字串
+    M: updatedOrders[i][12] != null ? String(updatedOrders[i][12]) : '', 
+    S: updatedOrders[i][18] || '' // 建立者
+  });
+}
+
+const detailRange = detailSheet.getDataRange();
+const detailData = detailRange.getValues();
+for (let i = 1; i < detailData.length; i++) {
+  const id = String(detailData[i][0] || '').trim();
+  const match = checkoutMap.get(id);
+  if (!match) continue;
+  detailData[i][18] = match.AA; // 客戶代號
+  detailData[i][17] = match.C;  // 客戶名稱
+  detailData[i][14] = match.B;  // 日期
+  detailData[i][10] = match.L;  // 業務
+  detailData[i][11] = match.M;  // 車趟，已經是字串，0 也會顯示
+  detailData[i][16] = match.S;  // 建立者
+}
+
+// 寫回同步後的明細
+detailSheet.getRange(1, 1, detailData.length, detailData[0].length).setValues(detailData);
+
+return { success: true, orderId };
+
+
+
+  } catch (err) {
+    Logger.log('❌ saveOrder error: ' + err.stack);
+    return { success: false, message: err.message };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+
+
+
+// 可選：後端也加入 convertWeight 函數，如果你在後端需要用這個換算邏輯
+function convertWeight(weight, fromUnit, toUnit) {
+  if (fromUnit === toUnit) return weight;
+  if (fromUnit === '台斤' && toUnit === '公斤') return weight * 0.6;
+  if (fromUnit === '公斤' && toUnit === '台斤') return weight / 0.6;
+  return weight;
+}
+
+
+function updateProductPrice(productName, newPrice) {
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const sheet = ss.getSheetByName('商品資料');
+  const data = sheet.getDataRange().getValues();
+
+  for (let i = 1; i < data.length; i++) {
+    const nameInSheet = String(data[i][1]).trim(); // B欄 = 商品名稱
+    if (nameInSheet === productName.trim()) {
+      sheet.getRange(i + 1, 3).setValue(newPrice); // C欄 = 單價
+      break;
+    }
+  }
+}
+
+
+/************************************************************
+ *  🔧 Utility：清理字串（適用於訂單ID、比對用字串）
+ ************************************************************/
+function cleanString(str) {
+  if (str === null || str === undefined) return '';
+
+  return str
+    .toString()               // 確保轉成字串
+    .trim()                   // 去除前後空白
+    .replace(/\s+/g, '')      // 移除中間空白
+    .replace(/\u3000/g, '')   // 移除全形空白
+    .replace(/\r?\n/g, '')    // 移除換行符號
+    .replace(/[^\x20-\x7E\u4E00-\u9FFF]/g, '') // 清除控制字元
+    .toUpperCase();           // 統一大寫（避免 A001 vs a001）
+}
+
+
+/************************************************************
+ *  📦 主功能：依訂單編號取得完整訂單資料
+ *  修正版：解決「日期永遠為今天」問題
+ *  ✅ 支援 B 欄「下單日期」
+ *  ✅ 確保前端一定有 data['訂單日期']
+ ************************************************************/
+function getOrderData(orderId) {
+  const cleanInputId = cleanString(orderId);
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const ordersSheet = ss.getSheetByName('結帳');
+  const detailsSheet = ss.getSheetByName('銷貨明細');
+
+  if (!ordersSheet) return null;
+
+  const orders = ordersSheet.getDataRange().getDisplayValues();
+  const details = detailsSheet ? detailsSheet.getDataRange().getDisplayValues() : [];
+
+  if (!orders || orders.length < 2) return null;
+
+  const headers = orders[0].map(h => h.toString().trim());
+  const idColIndex = 0;
+
+  let orderData = null;
+
+  // ---------- 找訂單 ----------
+  for (let i = 1; i < orders.length; i++) {
+    if (cleanString(orders[i][idColIndex]) === cleanInputId) {
+      orderData = {};
+      headers.forEach((h, idx) => {
+        orderData[h] = orders[i][idx];
+      });
+      orderData.details = [];
+
+      // ✅ 強制補上日期（B 欄）
+      // 即使表頭不是「訂單日期」，也能保證有值
+      if (!orderData['下單日期'] && orders[i][1]) {
+        orderData['下單日期'] = orders[i][1];
+      }
+
+      break;
+    }
+  }
+
+  if (!orderData) return null;
+
+  // ---------- 稅金 & 是否課稅 ----------
+  const taxColIndex = 16; // Q 欄 (index = 16)
+  const taxValue = parseFloat(orderData[headers[taxColIndex]] || 0);
+  orderData['結帳稅金'] = taxValue;
+  orderData['是否課稅'] = taxValue > 0;
+
+  // ---------- 找出商品明細 ----------
+  if (details && details.length >= 2) {
+    for (let j = 1; j < details.length; j++) {
+      const row = details[j];
+      const detailId = cleanString(row[0]);
+      if (detailId === cleanInputId) {
+        const detailRow = {
+          orderId: row[0],
+          id: row[1],
+          name: row[2],
+          qty: parseFloat(row[3]) || 0,
+          price: parseFloat(row[4]) || 0,
+          priceUnit: row[5] || '',
+          shipQty: parseFloat(row[6]) || 0,
+          convertQty: parseFloat(row[7]) || 0,
+          convertUnitName: row[8] || '',
+          subtotal: parseFloat(row[9]) || 0,
+          salesperson: row[10] || '',
+          tripNumber: String(row[11] ?? ''),
+          supplier: row[12] || '',
+          key: row[13] || ''
+        };
+        orderData.details.push(detailRow);
+      }
+    }
+  }
+
+  /************************************************************
+   *  🗓 統一日期欄位處理
+   *  → 不管表頭是「下單日期」、「訂單日期」或「日期」
+   *    都會轉成「訂單日期」
+   ************************************************************/
+  const possibleDateKeys = ['下單日期', '訂單日期', '日期', 'date', 'Date', 'dateStr'];
+  let orderDate = '';
+
+  for (const key of possibleDateKeys) {
+    if (orderData[key]) {
+      orderDate = orderData[key];
+      break;
+    }
+  }
+
+  // 格式化成 YYYY/MM/DD
+  if (orderDate) {
+    if (orderDate instanceof Date) {
+      const yyyy = orderDate.getFullYear();
+      const mm = (orderDate.getMonth() + 1).toString().padStart(2, '0');
+      const dd = orderDate.getDate().toString().padStart(2, '0');
+      orderDate = `${yyyy}/${mm}/${dd}`;
+    } else if (typeof orderDate === 'string') {
+      orderDate = orderDate.split(' ')[0].replace(/-/g, '/');
+    }
+  } else {
+    // 若無日期欄位，預設今天
+    const today = new Date();
+    const yyyy = today.getFullYear();
+    const mm = (today.getMonth() + 1).toString().padStart(2, '0');
+    const dd = today.getDate().toString().padStart(2, '0');
+    orderDate = `${yyyy}/${mm}/${dd}`;
+  }
+
+  // ✅ 確保回傳一定有「訂單日期」
+  orderData['訂單日期'] = orderDate;
+  
+
+  return orderData;
+}
+
+// 公司資料
+function getCompanyInfo() {
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const sheet = ss.getSheetByName("公司基本資料");
+  if (!sheet) return null;
+
+  const companyName = sheet.getRange("A2").getValue();
+  const companyTel = sheet.getRange("D2").getValue();
+  const companyNote = sheet.getRange("F2").getValue();
+
+  return {
+    name: companyName,
+    tel: companyTel,
+    note: companyNote
+  };
+}
+
+// 刪除訂單
+function deleteOrder(orderId) {
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const orderSheet = ss.getSheetByName('結帳');
+  const detailSheet = ss.getSheetByName('銷貨明細');
+
+  const detailVals = detailSheet.getDataRange().getValues();
+  const delRowsDetail = [];
+
+  for (let i = 1; i < detailVals.length; i++) {
+    if (String(detailVals[i][0]) === String(orderId)) {
+      delRowsDetail.push(i + 1);
+    }
+  }
+
+  delRowsDetail.reverse().forEach(r => {
+    detailSheet.deleteRow(r);
+  });
+
+  const ords = orderSheet.getDataRange().getValues();
+  for (let i = 1; i < ords.length; i++) {
+    if (String(ords[i][0]) === String(orderId)) {
+      orderSheet.deleteRow(i + 1);
+      break;
+    }
+  }
+
+  return true;
+}
+
+function createPdfFromHtml(htmlContent, fileName) {
+  const blob = Utilities.newBlob(htmlContent, 'text/html', 'temp.html');
+  const pdf = blob.getAs('application/pdf').setName(fileName);
+  // 將 PDF 放到使用者 Google Drive 或提供下載連結
+  const file = DriveApp.createFile(pdf);
+  return file.getUrl(); // 取得下載 URL
+}
