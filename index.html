@@ -505,7 +505,7 @@ async function updateTodayRecords() {
 
         container.innerHTML = "今日打卡紀錄：<br>" + data.map(r => {
             const time = fixTimeFormat(r.time);
-            const ipLabel = COMPANY_IPS.includes(r.ip) ? "(成功)" : "(錯誤-非公司網路異地請忽略)";
+            const ipLabel = COMPANY_IPS.includes(r.ip) ? "(成功)" : "(連線錯誤-異地請忽略)";
             const makeup = r.isMakeup ? "(補打卡-待審核)" : "";
             return `${r.status} ${time} ${ipLabel} ${makeup}`;
         }).join("<br>");
