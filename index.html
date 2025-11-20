@@ -165,6 +165,7 @@ body {
     <div class="buttons-container">
         <button id="btnStart">上班</button>
         <button id="btnEnd">下班</button>
+        <button id="btnMakeup">補打卡</button>
     </div>
 
     <!-- 倒數動畫 -->
@@ -192,10 +193,13 @@ body {
 // ===== 設定 =====
 const API_ENDPOINT = "https://script.google.com/macros/s/AKfycbwx6hAr4K-3PNCU-BZBhP-_XsEc64IGD-IpcRmddplabw9tc9j3aJ54QplYAfyN9AH5Iw/exec";
 const COMPANY_IPS = ["1.34.128.50"];
+    
 // ===== 主管 USER_ID（請填入你的主管 LINE userId）=====
 const MANAGERS = [
-    "U76174e2a9654ab2c7b1f037b28cb6c86","U7fdf4fbd467b9a93a23fac01ed03351b"
+    "U5362e40671c45e4c35629ff19163c414",
+    "U5362e40671c45e4c35629ff19163c414"
 ];
+
 
 // ===== 日期時間 =====
 function updateDateTime() {
@@ -680,7 +684,7 @@ document.getElementById("btnStart").onclick = () => performClockIn("上班");
 document.getElementById("btnEnd").onclick = () => performClockIn("下班");
 
 document.getElementById("btnApprove").onclick = () => {
-    window.location.href = "https://script.google.com/macros/s/AKfycbyxXrvVxfgwrI-SdXM03QEYxEpG-xqyjVQcxdNz1IBK3DtFC-kUFjHhRaNtgXNU-Mdu/exec";
+    window.location.href = "https://script.google.com/macros/s/AKfycbxaPziOwkI4ZSdM9jclAJNEEfk63B9hvzSc6Vb3occ0zOIgJBV0XYW8vMJm4KAM8HJE/exec";
 };
 
 // ===== 初始化 =====
@@ -692,6 +696,25 @@ window.onload = async () => {
 
 </body>
 </html>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
