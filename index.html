@@ -267,7 +267,6 @@ async function performClockIn(status, customDate="", customTime="", isMakeup=fal
         return;
     }
 
-    const ip = await getIP();
     const wrapper = document.getElementById("countdownWrapper");
     const circle = document.getElementById("circleProgress");
     const text = document.getElementById("countdownText");
@@ -293,22 +292,24 @@ async function performClockIn(status, customDate="", customTime="", isMakeup=fal
     let progress = 0;
     let lastTime = performance.now();
 
-    // === 動畫獨立跑 ===
+    // === 動畫函式 ===
     function animate(now) {
         const delta = now - lastTime;
         lastTime = now;
-        progress += delta / 1500;  // 簡單固定速度
+        progress += delta / 1500; // 固定速度
         if(progress > 1) progress = 1;
         circle.style.strokeDashoffset = circumference * (1 - progress);
+
         const rC = Math.round(startColor.r*(1-progress) + endColor.r*progress);
         const gC = Math.round(startColor.g*(1-progress) + endColor.g*progress);
         const bC = Math.round(startColor.b*(1-progress) + endColor.b*progress);
         circle.style.stroke = `rgb(${rC},${gC},${bC})`;
+
         if(progress < 1) requestAnimationFrame(animate);
     }
     requestAnimationFrame(animate);
 
-    // === 先立即彈窗「打卡中...」提示 ===
+    // === 立即顯示打卡中 Swal ===
     Swal.fire({
         icon: "info",
         title: isMakeup ? "補打卡中..." : "打卡中...",
@@ -317,32 +318,39 @@ async function performClockIn(status, customDate="", customTime="", isMakeup=fal
         didOpen: () => Swal.showLoading()
     });
 
-    // === API 請求 ===
-    let data;
-    try {
-        const res = await fetch(API_ENDPOINT, {
-            method: "POST",
-            body: JSON.stringify({ userId: window.userId, displayName: window.userName, status, ip, customDate, customTime, isMakeup })
-        });
-        data = await res.json();
-    } catch {
-        data = { message:"失敗" };
-    }
+    // === 延遲耗時操作，保證彈窗立即渲染 ===
+    setTimeout(async () => {
+        const ip = await getIP();
 
-    // === 更新 Swal 內容為結果 ===
-    if(data.message.includes("成功") && COMPANY_IPS.includes(ip)) {
-        Swal.fire({ icon:"success", title:"🎉 打卡成功！", html:`<strong>打卡時間：</strong> ${data.date} ${data.time}`, showConfirmButton:false, timer:3500 });
-    } else if(data.message.includes("成功")) {
-        Swal.fire({ icon:"warning", title:"⚠ 非公司網路", html:"切換網路再試<br><b>◎ 異地打卡請忽略 ◎</b>", showConfirmButton:false, timer:3500 });
-    } else {
-        Swal.fire({ icon:"error", title:"😥 今日已打卡", html:"重複打卡", showConfirmButton:false, timer:3000 });
-    }
+        // API 請求
+        let data;
+        try {
+            const res = await fetch(API_ENDPOINT, {
+                method: "POST",
+                body: JSON.stringify({ userId: window.userId, displayName: window.userName, status, ip, customDate, customTime, isMakeup })
+            });
+            data = await res.json();
+        } catch {
+            data = { message:"失敗" };
+        }
 
-    // 動畫可繼續跑一段時間
-    setTimeout(() => { wrapper.style.display = "none"; }, 300);
+        // 根據結果更新 Swal
+        if(data.message.includes("成功") && COMPANY_IPS.includes(ip)) {
+            Swal.fire({ icon:"success", title:"🎉 打卡成功！", html:`<strong>打卡時間：</strong> ${data.date} ${data.time}`, showConfirmButton:false, timer:3500 });
+        } else if(data.message.includes("成功")) {
+            Swal.fire({ icon:"warning", title:"⚠ 非公司網路", html:"切換網路再試<br><b>◎ 異地打卡請忽略 ◎</b>", showConfirmButton:false, timer:3500 });
+        } else {
+            Swal.fire({ icon:"error", title:"😥 今日已打卡", html:"重複打卡", showConfirmButton:false, timer:3000 });
+        }
 
-    updateTodayRecords();
+        // 動畫仍可持續顯示一段時間再隱藏
+        setTimeout(() => { wrapper.style.display = "none"; }, 300);
+
+        // 更新今日打卡紀錄
+        updateTodayRecords();
+    }, 0);
 }
+
 
 
 // ===== 打卡功能 =====
