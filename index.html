@@ -8,117 +8,156 @@
 <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
 
 <style>
-body { font-family: Arial; display:flex; flex-direction:column; align-items:center; margin:20px; }
-
-#dateTime { text-align:center; font-size:22px; margin-bottom:10px; }
-
-#userInfo { text-align:center; font-size:26px; margin-bottom:10px; }
-#statusInfo { text-align:center; font-size:23px; margin-bottom:20px; padding:5px 15px; border-radius:20px; display:inline-block; }
-
-.buttons-container {
-    display:flex;
-    flex-direction:row;
-    justify-content:space-between;
-    width:100%;
-    max-width:400px;
-    gap:10px;
+body { 
+    font-family: Arial; 
+    background:#f7f7f7;
+    display:flex; 
+    justify-content:center; 
+    padding:25px; 
+    margin:0;
 }
 
-/* 按鈕樣式 */
+/* === 卡片容器（整個頁面） === */
+.card {
+    background:white;
+    width:95%;
+    max-width:480px;
+    box-shadow:0 8px 25px rgba(0,0,0,0.12);
+    border-radius:18px;
+    padding:25px 20px;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap:20px;
+}
+
+/* 日期 / 使用者 / 狀態 */
+#dateTime { font-size:22px; }
+#userInfo { font-size:26px; font-weight:bold; }
+#statusInfo { 
+    font-size:20px;
+    padding:6px 18px; 
+    border-radius:30px; 
+    display:inline-block;
+    font-weight:bold;
+}
+
+/* 按鈕區 */
+.buttons-container {
+    width:100%;
+    display:flex;
+    gap:12px;
+}
+
 button { 
-    flex:1; 
-    padding:10px 0; 
-    font-size:16px; 
-    border-radius:8px; 
+    flex:1;
+    padding:12px 0; 
+    font-size:20px; 
+    border-radius:10px; 
     cursor:pointer; 
     font-weight:bold; 
     border:none;
-    transition: all 0.2s ease;
+    transition:0.22s;
 }
 
+/* 按鈕特效 */
 button:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 6px 12px rgba(0,0,0,0.1);
-}
-button:active {
-    transform: translateY(1px);
-    box-shadow: 0 2px 4px rgba(0,0,0,0.08);
+    transform: translateY(-3px);
+    box-shadow: 0 8px 14px rgba(0,0,0,0.12);
 }
 
-/* 按鈕顏色漸層 */
-#btnStart { 
-    background: linear-gradient(145deg, #3498db, #2980b9); 
-    color:white; 
-    box-shadow: 0 4px 8px rgba(52,152,219,0.3); 
-} 
-#btnEnd { 
-    background: linear-gradient(145deg, #2ecc71, #27ae60); 
-    color:white; 
-    box-shadow: 0 4px 8px rgba(46,204,113,0.3); 
-}   
-#btnMakeup { 
-    background: linear-gradient(145deg, #f39c12, #d35400); 
-    color:white; 
-    box-shadow: 0 4px 8px rgba(243,156,18,0.3); 
-} 
-
-#todayRecords { margin-top:20px; width:90%; border:1px solid #ccc; padding:10px; border-radius:8px; min-height:50px; }
+/* 按鈕顏色 */
+#btnStart { background:linear-gradient(145deg, #3498db, #2980b9); color:white; }
+#btnEnd { background:linear-gradient(145deg, #2ecc71, #27ae60); color:white; }
 
 /* 倒數動畫 */
-#countdownWrapper { margin-top:20px; width:120px; height:120px; position:relative; display:none; }
-#circleProgress { fill:none; stroke-width:12; stroke-linecap:round; transform: rotate(-90deg); transform-origin: 50% 50%; }
-#countdownText { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); font-weight:bold; white-space:nowrap; }
+#countdownWrapper { 
+    width:130px; 
+    height:130px; 
+    position:relative; 
+    display:none; 
+}
+#circleProgress { 
+    fill:none; 
+    stroke-width:12; 
+    stroke-linecap:round; 
+    transform: rotate(-90deg);
+    transform-origin: center;
+}
+#countdownText { 
+    position:absolute; 
+    top:50%; 
+    left:50%; 
+    transform:translate(-50%,-50%); 
+    font-weight:bold; 
+    font-size:18px;
+}
 
-/* 補打卡彈窗 */
-.fade-item { opacity:0; transform:translateY(10px); }
+/* 打卡紀錄卡片 */
+#todayRecords {
+    width:100%;
+    background:#fafafa;
+    border-radius:12px;
+    padding:15px;
+    border:1px solid #ddd;
+    font-size:18px;
+}
 
-/* Swal 樣式 */
-.swal2-popup-custom .swal2-title { font-size: 26px !important; font-weight: bold; }
-#makeupForm label { font-size: 19px !important; font-weight: bold; }
-.swal2-input-custom, .swal2-select-custom { width:100% !important; font-size:16px !important; padding:10px !important; }
-.swal2-confirm-custom, .swal2-cancel-custom { font-size:17px !important; padding:8px 20px !important; }
-.swal2-actions { width:100%; display:flex !important; justify-content:space-between !important; }
-.swal2-confirm-custom { background:#2ecc71 !important; color:white !important; }
-.swal2-cancel-custom { background:#3498db !important; color:white !important; }
+/* 主管按鈕 */
+#btnApprove {
+    margin-top:10px;
+    padding:14px 20px;
+    font-size:20px;
+    border-radius:12px;
+    background:linear-gradient(145deg,#8e44ad,#663399);
+    color:white;
+    width:100%;
+    border:none;
+    cursor:pointer;
+    font-weight:bold;
+    display:none;
+}
+#btnApprove:hover {
+    transform: translateY(-3px);
+    box-shadow:0 8px 14px rgba(0,0,0,0.12);
+}
 
+/* 響應式 */
+@media(max-width:420px){
+    button { font-size:18px; }
+    #userInfo { font-size:22px; }
+    #todayRecords { font-size:16px; }
+}
 </style>
-</head>
 
 <body>
-<div id="userInfo">正在獲取使用者資訊...</div>
-<div id="statusInfo"></div>
 
-<div id="dateTime">載入中…</div>
+<div class="card">
 
-<div class="buttons-container">
-    <button id="btnStart">上班</button>
-    <button id="btnEnd">下班</button>
-    
+    <div id="userInfo">正在獲取使用者資訊...</div>
+    <div id="statusInfo"></div>
+    <div id="dateTime">載入中…</div>
+
+    <div class="buttons-container">
+        <button id="btnStart">上班</button>
+        <button id="btnEnd">下班</button>
+    </div>
+
+    <div id="countdownWrapper">
+        <svg width="130" height="130">
+            <circle id="circleProgress" cx="65" cy="65" r="55"></circle>
+        </svg>
+        <div id="countdownText">打卡中...</div>
+    </div>
+
+    <div id="todayRecords">今日打卡紀錄：</div>
+
+    <button id="btnApprove">補打卡審批</button>
+
 </div>
 
-<div id="countdownWrapper">
-    <svg width="120" height="120">
-        <circle id="circleProgress" cx="60" cy="60" r="50"></circle>
-    </svg>
-    <div id="countdownText">打卡中...</div>
-</div>
+</body>
 
-<div id="todayRecords">今日打卡紀錄：</div>
-<!-- 主管審批按鈕 -->
-<button id="btnApprove"
-        style="
-            margin-top:20px;
-            padding:12px 20px;
-            font-size:18px;
-            font-weight:bold;
-            border-radius:10px;
-            background:linear-gradient(145deg,#8e44ad,#663399);
-            color:white;
-            display:none;
-            width:200px;
-        ">
-    補打卡審批
-</button>
 <script>
 // ===== 設定 =====
 const API_ENDPOINT = "https://script.google.com/macros/s/AKfycbwx6hAr4K-3PNCU-BZBhP-_XsEc64IGD-IpcRmddplabw9tc9j3aJ54QplYAfyN9AH5Iw/exec";
