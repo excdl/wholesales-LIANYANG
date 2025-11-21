@@ -309,14 +309,14 @@ async function performClockIn(status, customDate = "", customTime = "", isMakeup
         apiData = { message:"失敗" };
     }
 
-    // ===== API 回傳後立即顯示完整彈窗 =====
+    // ===== API 回傳後立即顯示完整彈窗，所有彈窗自動隱藏 2000ms =====
     if(apiData.message.includes("成功") && COMPANY_IPS.includes(ip)) {
         Swal.fire({
             icon: "success",
             title: isMakeup ? "🎉 補打卡成功！" : "🎉 打卡成功！",
             html: `<strong>打卡時間：</strong> ${apiData.date} ${apiData.time}`,
             showConfirmButton: false,
-            timer: 4000,
+            timer: 2000,
             backdrop: "rgba(0,0,0,0.5)"
         });
     } else if(apiData.message.includes("成功")) {
@@ -325,6 +325,7 @@ async function performClockIn(status, customDate = "", customTime = "", isMakeup
             title: `<span style="font-size:20px;color:#e67e22;">⚠ 非公司網路</span>`,
             html: `<div style="font-size:16px;color:#3498db;font-weight:bold;margin-top:8px;">◎ 異地打卡請忽略 ◎</div>`,
             showConfirmButton: false,
+            timer: 2000,
             backdrop: "rgba(0,0,0,0.5)"
         });
     } else {
@@ -333,6 +334,7 @@ async function performClockIn(status, customDate = "", customTime = "", isMakeup
             title: "😥 今日已打卡",
             html: "重複打卡",
             showConfirmButton: false,
+            timer: 2000,
             backdrop: "rgba(0,0,0,0.5)"
         });
     }
@@ -340,6 +342,7 @@ async function performClockIn(status, customDate = "", customTime = "", isMakeup
     // ===== 更新今日打卡紀錄 =====
     updateTodayRecords();
 }
+
     
 // ===== 取得今日紀錄 =====
 async function updateTodayRecords() {
