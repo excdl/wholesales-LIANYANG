@@ -407,17 +407,23 @@ document.getElementById("btnApprove").onclick = () => {
     window.location.href = "https://script.google.com/macros/s/AKfycbyxXrvVxfgwrI-SdXM03QEYxEpG-xqyjVQcxdNz1IBK3DtFC-kUFjHhRaNtgXNU-Mdu/exec";
 };
 
-// 🔧 修改：加入等待 userReady 才讀今日紀錄
 window.onload = async () => {
     await updateUserInfo();
 
-    const waitUser = setInterval(() => {
-        if (window.userReady) {
-            clearInterval(waitUser);
-            updateTodayRecords();   // 🔧 現在 userId 已確保可用
-        }
-    }, 100);
+    // 🔹 等待 userReady = true，再更新今日紀錄
+    const waitUserReady = () => new Promise(resolve => {
+        const timer = setInterval(() => {
+            if (window.userReady) {
+                clearInterval(timer);
+                resolve();
+            }
+        }, 100);
+    });
+
+    await waitUserReady();      // 等 LIFF 初始化完成
+    updateTodayRecords();       // 🔹 現在會正確顯示今日紀錄
 };
+
 </script>
 
 </body>
