@@ -373,11 +373,9 @@ async function performClockIn(status, customDate = "", customTime = "", isMakeup
     
 // ===== 取得今日紀錄 =====
 async function updateTodayRecords() {
-    const now = new Date();
-    const today = now.toLocaleDateString("zh-TW").replace(/\//g, "/");
 
     try {
-        const res = await fetch(`${API_ENDPOINT}?action=getToday&userId=${window.userId}&date=${today}`);
+        const res = await fetch(`${API_ENDPOINT}?action=getToday&userId=${window.userId}`);
         const data = await res.json();
 
         const container = document.getElementById("todayRecords");
@@ -398,6 +396,7 @@ async function updateTodayRecords() {
         document.getElementById("todayRecords").innerHTML = "今日打卡紀錄：讀取失敗";
     }
 }
+
 
 
 // ===== 按鈕事件 =====
